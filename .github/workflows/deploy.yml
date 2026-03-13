@@ -1,0 +1,138 @@
+# Nome da pipeline
+name: Deploy Git Game to Azure
+
+# Quando executar (push, manual, schedule)
+on:
+  push: 
+    branches: [ main ] # Executa a cada push na branch main
+  workflow_dispatch: # Permite disparar o workflow manualmente
+  
+
+# Variavéis globais
+env:
+  REGISTRY_NAME: gitgame
+
+# Trabalhos a executar
+jobs:
+  deploy: # Nome do job
+    runs-on: ubuntu-latest # Onde o código vai rodar
+
+# Steps (Passos dentro do job/O que será feito)
+  # PASSO 1 - Checkout do código do repositório/Baixa o código para o ubuntu-latest
+    steps: 
+    - name: Checkout code
+      uses: actions/checkout@v4 # Extensão do Github Actions para checkout
+  
+  # PASSO 2 - Login Azure:
+    - name: Azure Login
+      uses: azure/login@v1 # Extensão de Login do Azure
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }} # Secret criada no GitHub com as cred. do service principal
+
+  # PASSO 3 - Setup Terraform na ubuntu-latest:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v4 # Extensão do terraform para Git Actions
+      with:
+        terraform_version: 1.14.6
+  
+  # PASSO 4 - Inicializar e preparar o Terraform na ubuntu-latest
+        # Export das credenciais do Service Principal salva no Github para o terraform inicializar no Azure
+    - name: Terraform Init
+      run: |
+        cd terraform
+
+        export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+        export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+        export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+        export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+
+        terraform init
+    
+  # PASSO 5 - Planejar a infraestrutura básica
+        # Export das credenciais do Service Principal salva no Github para o terraform inicializar no Azure
+        # -target= Garante a criação da infraestrutura base para que o build das imagens sejam feitas  
+    - name: Terraform Plan
+      run: |
+        cd terraform
+    
+        export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+        export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+        export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+        export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"          
+
+        terraform plan -target=azurerm_resource_group.gitgame -target=azurerm_container_registry.gitgame -target=random_string.suffix
+
+  # PASSO 6 - Aplicar a Infraestrutura básica
+    - name: Terraform Apply
+      run: |
+        cd terraform
+    
+        export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+        export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+        export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+        export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+
+        terraform apply -auto-approve -target=azurerm_resource_group.gitgame -target=azurerm_container_registry.gitgame -target=random_string.suffix
+
+  # PASSO 7 - Build das imagens
+        # Buscar infos do Azure ACR(Azure Container Registry) criado anteriormente para poder subir as imagens
+        # Logar no ACR echo $ACR_PASSWORD | docker login $ACR_SERVER -u $ACR_USERNAME --password-stdin
+        # Build e Push da imagem do jogo, docker build(controi a imagem) e docker push(envia para o ACR)
+    - name: Build and Push Images
+      run: |
+        cd terraform
+        
+        export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+        export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+        export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+        export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"          
+  
+        ACR_SERVER=$(cd terraform && terraform output -raw acr_login_server)
+        ACR_USERNAME=$(cd terraform && terraform output -raw acr_admin_username)
+        ACR_PASSWORD=$(cd terraform && terraform output -raw acr_admin_password)
+        RANDOM_SUFFIX=$(cd terraform && terraform output -raw random_suffix)
+
+        echo $ACR_PASSWORD | docker login $ACR_SERVER -u $ACR_USERNAME --password-stdin
+
+        docker build -t $ACR_SERVER/gitgame-db:latest ./db
+        docker push  $ACR_SERVER/gitgame-db:latest
+
+        docker build -t $ACR_SERVER/gitgame-backend:latest ./backend
+        docker push  $ACR_SERVER/gitgame-backend:latest
+        
+        docker build \
+          --build-arg VITE_API_URL="http://gitgame-${RAMDON_SUFFIX}.eastus.azurecontainer.io:8000" \
+          -t $ACR_SERVER/gitgame-frontend:latest ./frontend
+        docker push  $ACR_SERVER/gitgame-frontend:latest      
+        
+  # PASSO 8 - Deploy dos containers
+  # if = força a criação com imagens atualizadas
+    - name: Deploy dos containers
+      run: |
+        cd terraform
+        
+        export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+        export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+        export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+        export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"          
+  
+        if terraform state show azurerm_container_group.gitgame >/dev/null 2>&1; then
+          terraform taint azurerm_continer_group.gitgame
+        fi
+
+        terraform apply -auto-approve 
+  
+  # PASSO 9 - Output das URLs da aplicação
+    - name: Show Application URLs
+      run: |
+        cd terraform
+        
+        export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+        export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+        export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+        export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"          
+  
+        echo "Git Game URLs:"
+        echo "Frontend: $(terraform output -raw application_url)"
+        echo "API: $(terraform output -raw api_url)"
+        echo "Deploy Realizado"
