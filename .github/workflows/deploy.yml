@@ -31,9 +31,9 @@ jobs:
 
   # PASSO 3 - Setup Terraform na ubuntu-latest:
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v4 # Extensão do terraform para Git Actions
+      uses: hashicorp/setup-terraform@v3 # Extensão do terraform para Git Actions
       with:
-        terraform_version: 1.14.6
+        terraform_version: 1.5.0
   
   # PASSO 4 - Inicializar e preparar o Terraform na ubuntu-latest
         # Export das credenciais do Service Principal salva no Github para o terraform inicializar no Azure
