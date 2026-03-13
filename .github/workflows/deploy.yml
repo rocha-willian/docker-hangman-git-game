@@ -80,8 +80,6 @@ jobs:
         # Build e Push da imagem do jogo, docker build(controi a imagem) e docker push(envia para o ACR)
     - name: Build and Push Images
       run: |
-        cd terraform
-        
         export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
         export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
         export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
