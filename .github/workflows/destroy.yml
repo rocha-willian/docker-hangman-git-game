@@ -1,0 +1,74 @@
+name: Destroy Git Game Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Digite "DESTROY" para confirmar'
+        required: true
+        default: ''
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'DESTROY'
+
+    steps: 
+    - name: Checkout code
+      uses: actions/checkout@v4 # Extensão do Github Actions para checkout
+  
+  # PASSO 2 - Login Azure:
+    - name: Azure Login
+      uses: azure/login@v2 # Extensão de Login do Azure
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }} # Secret criada no GitHub com as cred. do service principal
+
+  # PASSO 3 - Setup Terraform na ubuntu-latest:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3 # Extensão do terraform para Git Actions
+      with:
+        terraform_version: 1.5.0
+  
+  # PASSO 4 - Inicializar e preparar o Terraform na ubuntu-latest
+        # Export das credenciais do Service Principal salva no Github para o terraform inicializar no Azure
+    - name: Terraform Init
+      run: |
+        cd terraform
+
+        export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+        export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+        export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+        export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+
+        terraform init
+    
+  # PASSO 5 - Planejar Destroy
+        # Export das credenciais do Service Principal salva no Github para o terraform inicializar no Azure
+        # -target= Garante a criação da infraestrutura base para que o build das imagens sejam feitas  
+    - name: Terraform Plan Destroy
+      run: |
+        cd terraform
+    
+        export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+        export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+        export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+        export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"          
+
+        terraform plan -destroy
+
+  # PASSO 6 - Aplicar Destroy
+    - name: Terraform Destroy
+      run: |
+        cd terraform
+    
+        export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+        export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+        export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+        export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+
+        terraform destroy -auto-approve
+
+  # PASSO 7: Confirmação
+    - name: Destroy Complete
+      run: |
+        echo "Destruição Completa!"      
